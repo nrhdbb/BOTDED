@@ -246,33 +246,174 @@ function registerHandlers(client) {
     if (message.author.bot) {
       return;
     }
-    if (!message.content.startsWith(PREFIX)) {
-      return;
-    }
+    if (message.content.startsWith(PREFIX)) {
+      const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
+      const command = args.shift().toLowerCase();
 
-    const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
-    const command = args.shift().toLowerCase();
-
-    if (command === "aion") {
-      aiEnabled = true;
-      await message.reply("Mode AI telah diaktifkan. Gunakan !ai untuk bertanya.");
-      return;
-    }
-
-    if (command === "aioff") {
-      aiEnabled = false;
-      await message.reply("Mode AI telah dimatikan.");
-      return;
-    }
-
-    if (command === "ai") {
-      if (!aiEnabled) {
-        await message.reply("Mode AI sedang nonaktif. Aktifkan dengan perintah !aion.");
+      if (command === "aion") {
+        aiEnabled = true;
+        await message.reply(
+          "Mode AI telah diaktifkan. Sekarang kamu bisa chat langsung tanpa !ai."
+        );
         return;
       }
-      const prompt = args.join(" ");
+
+      if (command === "aioff") {
+        aiEnabled = false;
+        await message.reply("Mode AI telah dimatikan.");
+        return;
+      }
+
+      if (command === "ai") {
+        if (!aiEnabled) {
+          await message.reply(
+            "Mode AI sedang nonaktif. Aktifkan dengan perintah !aion."
+          );
+          return;
+        }
+        const promptFromCommand = args.join(" ");
+        if (!promptFromCommand) {
+          await message.reply(
+            "Tulis pertanyaan setelah perintah, contoh: !ai Apa kabar?"
+          );
+          return;
+        }
+        try {
+          const replyText = await callAiChat(promptFromCommand);
+          await message.reply(replyText);
+        } catch (error) {
+          console.error("Gagal memanggil API AI:", error);
+          await message.reply("Maaf, terjadi kendala saat memproses jawaban AI.");
+        }
+        return;
+      }
+
+      if (command === "imsak") {
+        try {
+          const city = args[0];
+          const country = args[1];
+          const times = await getPrayerTimes(city, country);
+          await message.reply(
+            `Informasi Imsak dan Subuh\n` +
+              `Imsak: ${times.imsak}\n` +
+              `Subuh (Fajr): ${times.fajr}`
+          );
+        } catch (error) {
+          await message.reply(
+            "Terjadi kesalahan saat mengambil informasi imsak. Coba lagi nanti."
+          );
+        }
+        return;
+      }
+
+      if (command === "adzan") {
+        try {
+          const city = args[0];
+          const country = args[1];
+          const times = await getPrayerTimes(city, country);
+          const teks =
+            `Jadwal Sholat untuk ${city || DEFAULT_CITY}, ${
+              country || DEFAULT_COUNTRY
+            }\n` +
+            `Imsak: ${times.imsak}\n` +
+            `Subuh (Fajr): ${times.fajr}\n` +
+            `Dzuhur (Dhuhr): ${times.dhuhr}\n` +
+            `Ashar (Asr): ${times.asr}\n` +
+            `Maghrib: ${times.maghrib}\n` +
+            `Isya (Isha): ${times.isha}`;
+          await message.reply(teks);
+        } catch (error) {
+          await message.reply(
+            "Terjadi kesalahan saat mengambil informasi adzan. Coba lagi nanti."
+          );
+        }
+        return;
+      }
+
+      if (command === "puasa") {
+        try {
+          const info = await getHijriDateInfo();
+          const status = info.isRamadan
+            ? "Sekarang berada di bulan Ramadhan, disunnahkan dan diwajibkan puasa sesuai ketentuan."
+            : "Saat ini bukan bulan Ramadhan. Tetap bisa melakukan puasa sunnah sesuai hari-hari yang dianjurkan.";
+          const teks =
+            `Informasi Tanggal Hijriah:\n` +
+            `${info.day} ${info.monthName} ${info.year} H\n` +
+            status;
+          await message.reply(teks);
+        } catch (error) {
+          await message.reply(
+            "Terjadi kesalahan saat mengambil informasi puasa. Coba lagi nanti."
+          );
+        }
+        return;
+      }
+
+      if (command === "testadzan") {
+        const label = args.join(" ") || "Adzan (Tes)";
+        const now = new Date();
+        const timeString = `${String(now.getHours()).padStart(
+          2,
+          "0"
+        )}:${String(now.getMinutes()).padStart(2, "0")}`;
+        await sendAdzanNotification(client, "test", label, timeString);
+        await message.reply("Notifikasi adzan tes telah dikirim.");
+        return;
+      }
+
+      if (command === "tagall") {
+        const pesanTambahan = args.join(" ");
+        const konten =
+          "@everyone " +
+          (pesanTambahan || "panggilan untuk semua member di server ini.");
+        await message.channel.send({ content: konten });
+        return;
+      }
+
+      if (command === "pushall") {
+        if (!message.guild) {
+          await message.reply(
+            "Perintah ini hanya bisa digunakan di dalam server (guild)."
+          );
+          return;
+        }
+        const teks = args.join(" ");
+        if (!teks) {
+          await message.reply(
+            "Silakan tambahkan pesan, contoh: !pushall Assalamualaikum semuanya."
+          );
+          return;
+        }
+        await message.reply(
+          "Mengirim pesan ke semua member yang memungkinkan DM. Ini bisa memakan waktu dan terbatasi oleh rate limit Discord."
+        );
+        try {
+          const members = await message.guild.members.fetch();
+          const promises = [];
+          for (const member of members.values()) {
+            if (member.user.bot) {
+              continue;
+            }
+            promises.push(member.send(teks).catch(() => undefined));
+          }
+          await Promise.all(promises);
+          await message.followUp
+            ? message.followUp("Selesai mengirim pesan ke member.")
+            : message.channel.send("Selesai mengirim pesan ke member.");
+        } catch (error) {
+          await message.channel.send(
+            "Terjadi kesalahan saat mengirim pesan ke member."
+          );
+        }
+        return;
+      }
+
+      return;
+    }
+
+    if (aiEnabled) {
+      const prompt = message.content.trim();
       if (!prompt) {
-        await message.reply("Tulis pertanyaan setelah perintah, contoh: !ai Apa kabar?");
         return;
       }
       try {
@@ -280,130 +421,7 @@ function registerHandlers(client) {
         await message.reply(replyText);
       } catch (error) {
         console.error("Gagal memanggil API AI:", error);
-        await message.reply("Maaf, terjadi kendala saat memproses jawaban AI.");
       }
-      return;
-    }
-
-    if (command === "imsak") {
-      try {
-        const city = args[0];
-        const country = args[1];
-        const times = await getPrayerTimes(city, country);
-        await message.reply(
-          `Informasi Imsak dan Subuh\n` +
-            `Imsak: ${times.imsak}\n` +
-            `Subuh (Fajr): ${times.fajr}`
-        );
-      } catch (error) {
-        await message.reply(
-          "Terjadi kesalahan saat mengambil informasi imsak. Coba lagi nanti."
-        );
-      }
-      return;
-    }
-
-    if (command === "adzan") {
-      try {
-        const city = args[0];
-        const country = args[1];
-        const times = await getPrayerTimes(city, country);
-        const teks =
-          `Jadwal Sholat untuk ${city || DEFAULT_CITY}, ${
-            country || DEFAULT_COUNTRY
-          }\n` +
-          `Imsak: ${times.imsak}\n` +
-          `Subuh (Fajr): ${times.fajr}\n` +
-          `Dzuhur (Dhuhr): ${times.dhuhr}\n` +
-          `Ashar (Asr): ${times.asr}\n` +
-          `Maghrib: ${times.maghrib}\n` +
-          `Isya (Isha): ${times.isha}`;
-        await message.reply(teks);
-      } catch (error) {
-        await message.reply(
-          "Terjadi kesalahan saat mengambil informasi adzan. Coba lagi nanti."
-        );
-      }
-      return;
-    }
-
-    if (command === "puasa") {
-      try {
-        const info = await getHijriDateInfo();
-        const status = info.isRamadan
-          ? "Sekarang berada di bulan Ramadhan, disunnahkan dan diwajibkan puasa sesuai ketentuan."
-          : "Saat ini bukan bulan Ramadhan. Tetap bisa melakukan puasa sunnah sesuai hari-hari yang dianjurkan.";
-        const teks =
-          `Informasi Tanggal Hijriah:\n` +
-          `${info.day} ${info.monthName} ${info.year} H\n` +
-          status;
-        await message.reply(teks);
-      } catch (error) {
-        await message.reply(
-          "Terjadi kesalahan saat mengambil informasi puasa. Coba lagi nanti."
-        );
-      }
-      return;
-    }
-
-    if (command === "testadzan") {
-      const label = args.join(" ") || "Adzan (Tes)";
-      const now = new Date();
-      const timeString = `${String(now.getHours()).padStart(2, "0")}:${String(
-        now.getMinutes()
-      ).padStart(2, "0")}`;
-      await sendAdzanNotification(client, "test", label, timeString);
-      await message.reply("Notifikasi adzan tes telah dikirim.");
-      return;
-    }
-
-    if (command === "tagall") {
-      const pesanTambahan = args.join(" ");
-      const konten =
-        "@everyone " +
-        (pesanTambahan || "panggilan untuk semua member di server ini.");
-      await message.channel.send({ content: konten });
-      return;
-    }
-
-    if (command === "pushall") {
-      if (!message.guild) {
-        await message.reply(
-          "Perintah ini hanya bisa digunakan di dalam server (guild)."
-        );
-        return;
-      }
-      const teks = args.join(" ");
-      if (!teks) {
-        await message.reply(
-          "Silakan tambahkan pesan, contoh: !pushall Assalamualaikum semuanya."
-        );
-        return;
-      }
-      await message.reply(
-        "Mengirim pesan ke semua member yang memungkinkan DM. Ini bisa memakan waktu dan terbatasi oleh rate limit Discord."
-      );
-      try {
-        const members = await message.guild.members.fetch();
-        const promises = [];
-        for (const member of members.values()) {
-          if (member.user.bot) {
-            continue;
-          }
-          promises.push(
-            member.send(teks).catch(() => undefined)
-          );
-        }
-        await Promise.all(promises);
-        await message.followUp
-          ? message.followUp("Selesai mengirim pesan ke member.")
-          : message.channel.send("Selesai mengirim pesan ke member.");
-      } catch (error) {
-        await message.channel.send(
-          "Terjadi kesalahan saat mengirim pesan ke member."
-        );
-      }
-      return;
     }
   });
 }
