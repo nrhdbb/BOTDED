@@ -104,6 +104,10 @@ async function sendAdzanNotification(client, prayerKey, prayerLabel, time) {
         : prayerKey === "imsak"
         ? "🌙"
         : "🕌";
+    const mention =
+      prayerKey === "test"
+        ? ""
+        : "@everyone ";
     const embed = new EmbedBuilder()
       .setTitle(`${accent} ${title}`)
       .setDescription(description)
@@ -115,7 +119,11 @@ async function sendAdzanNotification(client, prayerKey, prayerLabel, time) {
       )
       .setFooter({ text: "Jadwal Sholat Otomatis • WIB" })
       .setTimestamp(new Date());
-    await channel.send({ embeds: [embed] });
+    await channel.send(
+      mention
+        ? { content: mention, embeds: [embed] }
+        : { embeds: [embed] }
+    );
   } catch (error) {
     console.error("Gagal mengirim notifikasi adzan.", prayerKey, error);
   }
