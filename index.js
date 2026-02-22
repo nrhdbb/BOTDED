@@ -7,6 +7,8 @@ const DEFAULT_CITY = process.env.PRAYER_CITY || "Jakarta";
 const DEFAULT_COUNTRY = process.env.PRAYER_COUNTRY || "Indonesia";
 const PRAYER_METHOD = Number(process.env.PRAYER_METHOD || 20);
 const ADZAN_CHANNEL_ID = process.env.ADZAN_CHANNEL_ID;
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const AI_DEFAULT_ENABLED = process.env.AI_DEFAULT_ENABLED === "true";
 
 async function getPrayerTimes(city, country) {
   const targetCity = city || DEFAULT_CITY;
@@ -181,6 +183,45 @@ async function scheduleDailyAdzanNotifications(client) {
   }, msUntilNextMidnight);
 }
 
+let aiEnabled = AI_DEFAULT_ENABLED;
+
+async function callAiChat(prompt) {
+  if (!OPENROUTER_API_KEY) {
+    throw new Error("OPENROUTER_API_KEY belum di-set di environment.");
+  }
+  const url = "https://openrouter.ai/api/v1/chat/completions";
+  const body = {
+    model: "deepseek/deepseek-r1-0528:free",
+    messages: [
+      {
+        role: "system",
+        content:
+          "Kamu adalah asisten chat yang sopan dan ramah, menjawab dalam bahasa Indonesia, singkat, jelas, dan terasa seperti manusia."
+      },
+      {
+        role: "user",
+        content: prompt
+      }
+    ]
+  };
+  const response = await axios.post(url, body, {
+    headers: {
+      Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    timeout: 20000
+  });
+  if (
+    !response.data ||
+    !response.data.choices ||
+    !response.data.choices[0] ||
+    !response.data.choices[0].message
+  ) {
+    throw new Error("Respons AI tidak valid.");
+  }
+  return response.data.choices[0].message.content;
+}
+
 function createClient() {
   const client = new Client({
     intents: [
@@ -211,6 +252,38 @@ function registerHandlers(client) {
 
     const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
     const command = args.shift().toLowerCase();
+
+    if (command === "aion") {
+      aiEnabled = true;
+      await message.reply("Mode AI telah diaktifkan. Gunakan !ai untuk bertanya.");
+      return;
+    }
+
+    if (command === "aioff") {
+      aiEnabled = false;
+      await message.reply("Mode AI telah dimatikan.");
+      return;
+    }
+
+    if (command === "ai") {
+      if (!aiEnabled) {
+        await message.reply("Mode AI sedang nonaktif. Aktifkan dengan perintah !aion.");
+        return;
+      }
+      const prompt = args.join(" ");
+      if (!prompt) {
+        await message.reply("Tulis pertanyaan setelah perintah, contoh: !ai Apa kabar?");
+        return;
+      }
+      try {
+        const replyText = await callAiChat(prompt);
+        await message.reply(replyText);
+      } catch (error) {
+        console.error("Gagal memanggil API AI:", error);
+        await message.reply("Maaf, terjadi kendala saat memproses jawaban AI.");
+      }
+      return;
+    }
 
     if (command === "imsak") {
       try {
